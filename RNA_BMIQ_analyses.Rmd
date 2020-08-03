@@ -1,0 +1,387 @@
+---
+title: "RNAseq and Methylation Beta value combined analyses"
+output: html_notebook
+---
+
+```{r, include = FALSE}
+library(tidyverse)
+library(sva)
+library(Hmisc)
+library(pheatmap)
+library(limma)
+library(dplyr)
+library(RColorBrewer)
+library(factoextra)
+library(FactoMineR)
+library(GenomicRanges)
+library(EnhancedVolcano)
+library(stringr)
+
+
+setwd("~/Gits/TCGA_Connections/")
+
+ALL_GDC_sample <- read_tsv("DATA_sample/ALL_data.tsv")
+IDHm_GDC_sample <- read_tsv("DATA_sample/IDHm.tsv")
+DNMT3Am_GDC_sample <- read_tsv("DATA_sample/DNMT3Am.tsv")
+WT1m_GDC_sample <- read_tsv("DATA_sample/WT1m.tsv")
+FLT3m_GDC_sample <- read_tsv("DATA_sample/FLT3m.tsv")
+TET2m_GDC_sample <- read_tsv("DATA_sample/TET2m.tsv")
+
+if (!exists("BMIQ_met")){
+  BMIQ_met <- read.csv("~/Gits/TCGA_Connections/BMIQ_met.csv", row.names=1)
+}
+
+Phenotype_met <- read.csv("Phenotype_met.csv", row.names=1)
+Phenotype_met_design <- paste(Phenotype_met$IDH, Phenotype_met$DNMT3A, Phenotype_met$WT1, Phenotype_met$FLT3, Phenotype_met$TET2, sep = ".")
+
+
+if (!exists("DATA_RNAseq")){
+  DATA_RNAseq <- read.csv("DATA_RNAseq.csv", row.names=1)
+  }
+
+Phenotype_RNAseq <- read.csv("Phenotype_RNAseq.csv", row.names=1)
+Phenotype_RNAseq_design <- paste(Phenotype_RNAseq$IDH, Phenotype_RNAseq$DNMT3A, Phenotype_RNAseq$WT1, Phenotype_RNAseq$FLT3, Phenotype_RNAseq$TET2, sep = ".")
+```
+
+```{r}
+
+
+ct <- factor(Phenotype_met_design, 
+       levels = c("IDHm.DNMT3Am.WT1m.FLT3m.TET2WT",
+                  "IDHm.DNMT3Am.WT1WT.FLT3AWT.TET2WT",
+                  "IDHm.DNMT3Am.WT1WT.FLT3m.TET2WT",
+                  "IDHm.DNMT3AWT.WT1m.FLT3AWT.TET2WT",
+                  "IDHm.DNMT3AWT.WT1WT.FLT3AWT.TET2WT",
+                  "IDHWT.DNMT3Am.WT1WT.FLT3AWT.TET2WT",
+                  "IDHWT.DNMT3Am.WT1WT.FLT3m.TET2WT",
+                  "IDHWT.DNMT3AWT.WT1m.FLT3AWT.TET2WT",
+                  "IDHWT.DNMT3AWT.WT1WT.FLT3AWT.TET2m", 
+                  "IDHWT.DNMT3AWT.WT1WT.FLT3AWT.TET2WT",
+                  "IDHWT.DNMT3AWT.WT1WT.FLT3m.TET2WT"),
+       labels = c("IDHm.DNMT3Am.WT1m.FLT3m", 
+                  "IDHm.DNMT3Am",
+                  "IDHm.DNMT3Am.FLT3m",
+                  "IDHm.WT1m",
+                  "IDHm",
+                  "DNMT3Am",
+                  "DNMT3Am.FLT3m",
+                  "WT1m",
+                  "TET2m", 
+                  "WT",
+                  "FLT3m"))
+design <- model.matrix(~ 0 + ct)
+colnames(design) <- levels(ct)
+fit <- lmFit(BMIQ_met, design)
+contrasts <- makeContrasts(`IDHm-WT` = IDHm - WT,
+                           `DNMT3Am-WT` = DNMT3Am - WT,
+                           `WT1m-WT` = WT1m - WT,
+                           `FLT3m-WT` = FLT3m - WT,
+                           `TET2m-WT` = TET2m - WT,
+                           levels = design)
+
+move <- function(data, cols, ref, side = c("before", "after")) {
+  if (!requireNamespace("dplyr")) {
+    stop("Make sure package 'dplyr' is installed to use function 'move'")
+  }
+  side <- match.arg(side)
+  cols <- rlang::enquo(cols)
+  ref <- rlang::enquo(ref)
+  if (side == "before") {
+    dplyr::select(data, 1:!!ref, -!!ref, -!!cols, !!cols, dplyr::everything())
+  } else {
+    dplyr::select(data, 1:!!ref, -!!cols, !!cols, dplyr::everything())
+  }
+}
+
+fit2 <- contrasts.fit(fit, contrasts)
+fit2 <- eBayes(fit2, trend = TRUE)
+FitList <- list()
+for (i in 1:ncol(contrasts)) {
+  FitList[[colnames(contrasts)[i]]] <- topTable(fit2, coef = i, number = nrow(BMIQ_met)) %>%
+    mutate(ID = rownames(.)) %>%
+    move(., ID, logFC, side = "before") #%>%
+    # filter(adj.P.Val < 0.05)
+}
+comparisons <- names(FitList)
+```
+
+
+```{r}
+Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method = "pearson") {
+  name <- ""
+  if (class(remove_cases) != "logical" ){
+    number_of_cases <- length(DATA[1,])
+    remove_cases <- rep(TRUE, number_of_cases)
+    name = "full_data"
+  }
+  DATA_filtered <- DATA[,remove_cases]
+  Phenotype_filtered <- Phenotype[remove_cases,]
+  matrix <- as.matrix.data.frame(DATA_filtered)
+  ann_colors <- list(
+    DNMT3a = c(DNMT3AWT = "brown1", DNMT3Am = "cyan4"),
+    IDH = c(IDHWT = "bisque1", IDHm = "coral3"),
+    WT1 = c(WT1WT = "chartreuse4", WT1m = "brown4"),
+    FLT3 = c(FLT3AWT = "brown", FLT3m = "darkgoldenrod1"),
+    TET2 = c(TET2WT = "brown1", TET2m = "cyan4"))
+  annotation_for_heatmap <- data.frame(IDH = Phenotype_filtered$IDH, DNMT3a = Phenotype_filtered$DNMT3A, WT1 = Phenotype_filtered$WT1, FLT3 = Phenotype_filtered$FLT3, TET2 = Phenotype_filtered$TET2)
+  rownames(annotation_for_heatmap) <- colnames(DATA_filtered)
+  corr <- rcorr(matrix, type = corr_method)$r
+  name <- ifelse(name == "full_data", name, deparse(substitute(remove_cases)))
+  colnames(corr) <- colnames(DATA_filtered)
+  heatmap <- pheatmap(corr, 
+         color = colorRampPalette(rev(brewer.pal(n = 11, name = "RdYlBu")))(100),
+         annotation_col = annotation_for_heatmap,
+         annotation_colors = ann_colors,
+         legend = TRUE,
+         treeheight_row = 20,
+         main = paste0("Heatmap ",  deparse(substitute(DATA)), " ", name, " ", corr_method, " correlation"), 
+         fontsize = 10
+         )
+  return(heatmap)
+} 
+
+heat_BMIQ_all_data <- Create_heatmap_corr(BMIQ_met, Phenotype = Phenotype_met)
+single_mutation <- rowSums(design[,c(1:4,7)]) == 0
+heat_single_mutation <- Create_heatmap_corr(BMIQ_met, single_mutation, Phenotype_met)
+png(filename = "Results/heatmap_BMIQ_allData.png", width = 1920, height = 1080)
+heat_BMIQ_all_data
+dev.off()
+png(filename = "Results/heatmap_BMIQ_single_mutation.png", width = 1920, height = 1080)
+heat_single_mutation
+dev.off()
+no_wild_type <- design[,10] == 0
+heat_no_WT <- Create_heatmap_corr(BMIQ_met, no_wild_type, Phenotype_met)
+png(filename = "Results/heatmap_BMIQ_no_wild_type.png", width = 1920, height = 1080)
+heat_no_WT
+dev.off()
+no_wild_type_single_mutation <- rowSums(design[,c(1:4,7, 10)]) == 0
+heat_no_WT_single_mutation <- Create_heatmap_corr(BMIQ_met, no_wild_type_single_mutation, Phenotype_met)
+png(filename = "Results/heatmap_BMIQ_no_wild_type_single_mutation.png", width = 1920, height = 1080)
+heat_no_WT_single_mutation
+dev.off()
+deconvolution <- read.delim("~/Gits/TCGA_Connections/deconvolution.txt", row.names=1)
+Cases2 <- str_replace_all(Cases, "-", ".")
+deconvolution <- deconvolution[rownames(deconvolution) %in% Cases2,]
+MacroPatient <- rownames(deconvolution[deconvolution$uncharacterized.cell > 0.5,])
+No_Macro_deconv <- colnames(BMIQ_met) %in% MacroPatient
+names(No_Macro_deconv) <- seq(1:length(No_Macro_deconv))
+heat_no_M2_patients <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = No_Macro_deconv, Phenotype = Phenotype_met)
+png(filename = "Results/heat_no_M2_patients.png", width = 1920, height = 1080)
+heat_no_M2_patients
+dev.off()
+```
+
+
+```{r}
+DATA_for_PCA <- cbind(t(BMIQ_met), Phenotype_met)
+res.pca <- PCA(DATA_for_PCA, scale.unit = FALSE, ncp = 5, graph = TRUE, quali.sup = c(394047:394051))
+png(filename = "Results/Methylation_ellipses_PCA.png", width = 1920, height = 1080)
+plotellipses(res.pca, 394047:394051)
+dev.off()
+png(filename = "Results/Methylation_barplot_PCA.png", width = 1920, height = 1080)
+fviz_eig(res.pca, addlabels = TRUE)
+dev.off()
+fviz_eig(res.pca, addlabels = TRUE)
+plotellipses(res.pca, 394047:394051)
+```
+
+
+```{r}
+Filter_Differential_Methylation <- function(DATA, pvalue, logFC_treshold) {
+  message("[=========================================================]")
+  message("[<<<<<<<<<<<<<<<<< Filtering Methylation >>>>>>>>>>>>>>>>>]")
+  message("[<<<<<<<<<< Keep cpgs Differentially Methylated >>>>>>>>>>]")
+  message("-----------------------------------------------------------")
+  High_contrast <- DATA[DATA$P.Value < pvalue & DATA$logFC**2 > logFC_treshold**2,]
+  print(paste0("The number of CpGs differentially methylated is ", length(High_contrast[,1]), "."))
+  return(High_contrast)
+}
+
+if (!exists("anno450")){
+  anno450 <- read.csv("~/Illumina_manifest/HumanMethylation450_15017482_v1-2.csv", skip = 7) %>% dplyr::select(., "Name", "CHR", "MAPINFO", "UCSC_RefGene_Name", "UCSC_RefGene_Group", "Relation_to_UCSC_CpG_Island")
+}
+
+Filtered_methylation_data <- list()
+for (i in names(FitList)){
+  message(paste0("=== Comparison ", i, " analyze ==="))
+  Filtered_methylation_data[[i]] <- Filter_Differential_Methylation(FitList[[i]], pvalue = 0.05, logFC_treshold = 0.3)
+  Filtered_methylation_data[[i]] <- merge(Filtered_methylation_data[[i]], anno450, by.x = "ID", by.y = "Name")
+  Filtered_methylation_data[[i]] <- filter(Filtered_methylation_data[[i]], str_detect(Filtered_methylation_data[[i]]$ID, "cg"))
+}
+```
+
+```{r}
+enhanced_volcano <- list()
+for (i in names(FitList)) {
+  enhanced_volcano[[i]] <- data.frame(logFC = FitList[[i]]$logFC, pvalue = FitList[[i]]$P.Value, cpgs = FitList[[i]]$ID)
+  enhanced_volcano[[i]] <- merge(enhanced_volcano[[i]], anno450, by.x = "cpgs", by.y = "Name")
+  enhanced_volcano[[i]] <- EnhancedVolcano(
+    toptable = enhanced_volcano[[i]],
+    lab = enhanced_volcano[[i]]$UCSC_RefGene_Name,
+    x = "logFC",
+    y = "pvalue",
+    FCcutoff = 0.1,
+    pCutoff = 0.0001,
+    title = "Volcano plot of the differential\nmethylation of CpGs between WT and Mut",
+    subtitle = NA,
+    legendPosition = "right",
+    subtitleLabSize = 0,
+    legendLabSize = 10,
+    ylim = c(0, 10)
+  )
+}
+comparisons <- names(enhanced_volcano)
+j <- 4
+png(file = paste0("Results/", comparisons[j], "_Methylation_beta_values_BMIQ_volcano_plot.png"), width = 1920, height = 1080)
+par(mfrow = c(1, 1))
+enhanced_volcano[[comparisons[j]]]
+dev.off()
+```
+
+```{r}
+if (!exists("Blueprint_network")) {
+  Blueprint_network <- read.csv("BLUEPRINT_fragments_good.tsv", sep = "\t")
+  Blueprint_network <- dplyr::select(Blueprint_network, "chr", "start", "end", "type", "ensembl", "gene_names", "intronic_regions", "type") #%>% filter(., type == "P")
+  Blueprint_network <- Blueprint_network %>% separate_rows(., gene_names, sep = " ")
+  Blueprint_GRanges <- GRanges(
+    seqnames = Blueprint_network$chr,
+    ranges = IRanges(start = Blueprint_network$start, end = Blueprint_network$end),
+    type = Blueprint_network$type,
+    gene_names = Blueprint_network$gene_names
+  )
+}
+
+
+GRanges_methylations <- list()
+match_hit_methylation_promoters <- list()
+Promoters_list <- list()
+for (i in names(Filtered_methylation_data)) {
+  GRanges_methylations[[i]] <- GRanges(
+    seqnames = Filtered_methylation_data[[i]]$CHR,
+    ranges = IRanges(start = Filtered_methylation_data[[i]]$MAPINFO, end = Filtered_methylation_data[[i]]$MAPINFO + 1),
+    Condition_1 = Filtered_methylation_data[[i]]$WT,
+    Condition_2 = Filtered_methylation_data[[i]]$MUT
+  )
+  overlaps <- findOverlaps(Blueprint_GRanges, GRanges_methylations[[i]])
+  match_hit_methylation_promoters[[i]] <- data.frame(mcols(Blueprint_GRanges[queryHits(overlaps)]), as.data.frame(mcols(GRanges_methylations[[i]])[subjectHits(overlaps), ]), stringsAsFactors = T)
+  Promoters_list[[i]] <- match_hit_methylation_promoters[[i]][match_hit_methylation_promoters[[i]]$type == "P", "gene_names"]
+  message(paste0("=== Comparison ", i, " analyze ==="))
+  message("=== CpGs Differentially methylated overlapping Genes promoters ===")
+  message(length(Promoters_list[[i]]))
+}
+```
+
+
+
+
+```{r}
+if (!exists("pchic")){
+  load("~/Genes_network/Chromatine_network/DATA/pchic.RData")
+  pchic <- pchic[, c(1:10)]
+  List_Promoter <- paste(pchic$baitChr, pchic$baitStart, sep = "_")
+  List_Promoter <- unique(List_Promoter)
+  colnames(pchic)[c(1:5, 6:10)] <- rep(c("chr", "start", "end", "ID", "Name"), 2)
+  PCHiC_bed <- unique(rbind(pchic[, c(1:3, 5)], pchic[, c(6:8, 10)]))
+  PCHiC_GRange <- GRanges(
+    seqnames = PCHiC_bed$chr,
+    IRanges(start = PCHiC_bed$start, end = PCHiC_bed$end),
+    Gene_Pchic = PCHiC_bed$Name
+  )
+  PCHiC_GRange$ID <- paste(PCHiC_bed$chr, PCHiC_bed$start, sep = "_")
+  colnames(pchic) <- c("chr_bait", "start_bait", "end_bait", "ID_bait", "Name_bait", "chr_oe", "start_oe", "end_oe", "ID_oe", "Name_oe")
+  pchic$IDbait <- paste(pchic$chr_bait, pchic$start_bait, sep = "_")
+  pchic$IDoe <- paste(pchic$chr_oe, pchic$start_oe, sep = "_")
+}
+
+matchit_methylome_pchic <- list()
+for (i in names(Filtered_methylation_data)){
+  overlaps <- findOverlaps(PCHiC_GRange, GRanges_methylations[[i]])
+  matchit_methylome_pchic[[i]] <- data.frame(mcols(PCHiC_GRange[queryHits(overlaps)]), as.data.frame(mcols(GRanges_methylations[[i]])[subjectHits(overlaps), ]), stringsAsFactors = T)
+  matchit_methylome_pchic[[i]]$CpG <- TRUE
+  message(paste0("=== Comparison ", i, " analyze ==="))
+  message("=== CpGs overlapping PCHiC chromatin fragments ===")
+  message(length(unique(matchit_methylome_pchic[[i]]$ID)))
+}
+```
+
+```{r}
+CpGs_interaction <- list()
+for (i in names(matchit_methylome_pchic)){
+  CpGs_interaction[[i]] <-  unique(rbind(pchic[which(pchic$IDbait %in% matchit_methylome_pchic[[i]]$ID), ], pchic[which(pchic$IDoe %in% matchit_methylome_pchic[[i]]$ID), ]))
+  message(paste0("=== Comparison ", i, " analyze ==="))
+  message("=== Chromatin fragment connected to CpGs Differentially methylated ===")
+  ID_chromatin <- unique(c(CpGs_interaction[[i]]$IDbait, CpGs_interaction[[i]]$IDoe))
+  message(length(ID_chromatin))
+}
+
+```
+
+```{r}
+CpGs_interaction_nodes <- list()
+match_hit_CpGs_neighbor_promoter <- list()
+for (i in names(CpGs_interaction)) {
+  message(paste0("=== Comparison ", i, " analyze ==="))
+  CpGs_interaction_nodes[[i]] <- CpGs_interaction[[i]][,c(1:10)]
+  colnames(CpGs_interaction_nodes[[i]]) <- rep(c("chr", "start", "end", "ID", "Name"),2)
+  CpGs_interaction_nodes[[i]] <- unique(rbind(CpGs_interaction_nodes[[i]][,c(1:5)], CpGs_interaction_nodes[[i]][,c(6:10)]))
+  CpGs_interaction_nodes_Granges <- GRanges(
+    seqnames = CpGs_interaction_nodes[[i]]$chr,
+    ranges = IRanges(start = CpGs_interaction_nodes[[i]]$start, end = CpGs_interaction_nodes[[i]]$end)
+  )
+  overlaps <- findOverlaps(Blueprint_GRanges, CpGs_interaction_nodes_Granges)
+  match_hit_CpGs_neighbor_promoter[[i]] <- data.frame(mcols(Blueprint_GRanges[queryHits(overlaps)]), as.data.frame(mcols(CpGs_interaction_nodes_Granges)[subjectHits(overlaps), ]), stringsAsFactors = T)
+  message("=== Number of nodes ===")
+  message(length(match_hit_CpGs_neighbor_promoter[[i]]$type))
+  message("=== Number of nodes corresponding to Promoter ===")
+  nodes_promoter <- match_hit_CpGs_neighbor_promoter[[i]][match_hit_CpGs_neighbor_promoter[[i]]$type == "P",]
+  message(length(nodes_promoter$gene_names))
+  message("=== Number of genes having Promoter in the neighbor of CpGs DM ===")
+  message(length(unique(nodes_promoter$gene_names)))
+}
+
+
+```
+
+```{r}
+design <- model.matrix(~0 + Phenotype_RNAseq_design)
+  
+  #Removing heteroscedascity from data
+  
+v_expr <- voom(DATA_RNAseq[,-77], design, plot = TRUE)
+
+matrix_rna <- v_expr$E
+single_mutation <- design[,c(1:4,7)] == 0
+
+
+heat_RNAseq_all_data <- Create_heatmap_corr(matrix_rna, Phenotype = Phenotype_RNAseq)
+single_mutation <- rowSums(design[,c(1:4,7)]) == 0
+heat_single_mutation <- Create_heatmap_corr(matrix_rna, single_mutation, Phenotype_RNAseq)
+png(filename = "~/TCGA_Exploration/heatmap_RNAseq_allData.png", width = 1920, height = 1080)
+heat_RNAseq_all_data
+dev.off()
+png(filename = "~/TCGA_Exploration/heatmap_RNAseq_single_mutation.png", width = 1920, height = 1080)
+heat_single_mutation
+dev.off()
+
+no_wild_type <- design[,10] == 0
+heat_no_WT <- Create_heatmap_corr(matrix_rna, no_wild_type, Phenotype_RNAseq)
+png(filename = "Results/heatmap_RNAseq_no_wild_type.png", width = 1920, height = 1080)
+heat_no_WT
+dev.off()
+no_wild_type_single_mutation <- rowSums(design[,c(1:4,7, 10)]) == 0
+heat_no_WT_single_mutation <- Create_heatmap_corr(matrix_rna, no_wild_type_single_mutation, Phenotype_RNAseq)
+png(filename = "Results/heatmap_RNAseq_no_wild_type_single_mutation.png", width = 1920, height = 1080)
+heat_no_WT_single_mutation
+dev.off()
+
+MacroPatient <- rownames(deconvolution[deconvolution$uncharacterized.cell > 0.5,])
+No_Macro_deconv <- colnames(matrix_rna) %in% MacroPatient
+names(No_Macro_deconv) <- seq(1:length(No_Macro_deconv))
+heat_no_M2_patients <- Create_heatmap_corr(DATA = matrix_rna, remove_cases = No_Macro_deconv, Phenotype = Phenotype_RNAseq)
+png(filename = "Results/heatmap_RNAseq_no_M2_patients.png", width = 1920, height = 1080)
+heat_no_M2_patients
+dev.off()
+
+
+```
+
