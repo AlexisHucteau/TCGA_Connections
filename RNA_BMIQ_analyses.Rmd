@@ -18,7 +18,7 @@ library(EnhancedVolcano)
 library(stringr)
 
 
-setwd("~/Gits/TCGA_Connections/")
+setwd("~/GitHub/TCGA_Connections/")
 
 ALL_GDC_sample <- read_tsv("DATA_sample/ALL_data.tsv")
 IDHm_GDC_sample <- read_tsv("DATA_sample/IDHm.tsv")
@@ -28,7 +28,7 @@ FLT3m_GDC_sample <- read_tsv("DATA_sample/FLT3m.tsv")
 TET2m_GDC_sample <- read_tsv("DATA_sample/TET2m.tsv")
 
 if (!exists("BMIQ_met")){
-  BMIQ_met <- read.csv("~/Gits/TCGA_Connections/BMIQ_met.csv", row.names=1)
+  BMIQ_met <- read.csv("BMIQ_met.csv", row.names=1)
 }
 
 Phenotype_met <- read.csv("Phenotype_met.csv", row.names=1)
@@ -44,8 +44,6 @@ Phenotype_RNAseq_design <- paste(Phenotype_RNAseq$IDH, Phenotype_RNAseq$DNMT3A, 
 ```
 
 ```{r}
-
-
 ct <- factor(Phenotype_met_design, 
        levels = c("IDHm.DNMT3Am.WT1m.FLT3m.TET2WT",
                   "IDHm.DNMT3Am.WT1WT.FLT3AWT.TET2WT",
@@ -159,13 +157,13 @@ heat_no_WT_single_mutation <- Create_heatmap_corr(BMIQ_met, no_wild_type_single_
 png(filename = "Results/heatmap_BMIQ_no_wild_type_single_mutation.png", width = 1920, height = 1080)
 heat_no_WT_single_mutation
 dev.off()
-deconvolution <- read.delim("~/Gits/TCGA_Connections/deconvolution.txt", row.names=1)
-Cases2 <- str_replace_all(Cases, "-", ".")
-deconvolution <- deconvolution[rownames(deconvolution) %in% Cases2,]
+deconvolution <- read.delim("deconvolution.txt", row.names=1)
+Cases <- ALL_GDC_sample$`Case ID` %>% str_replace_all(., "-", ".")
+deconvolution <- deconvolution[rownames(deconvolution) %in% Cases,]
 MacroPatient <- rownames(deconvolution[deconvolution$uncharacterized.cell > 0.5,])
 No_Macro_deconv <- colnames(BMIQ_met) %in% MacroPatient
 names(No_Macro_deconv) <- seq(1:length(No_Macro_deconv))
-heat_no_M2_patients <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = No_Macro_deconv, Phenotype = Phenotype_met)
+heat_no_M2_patients <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = No_Macro_deconv, Phenotype = Phenotype_met, corr_method = "pearson")
 png(filename = "Results/heat_no_M2_patients.png", width = 1920, height = 1080)
 heat_no_M2_patients
 dev.off()
@@ -198,7 +196,7 @@ Filter_Differential_Methylation <- function(DATA, pvalue, logFC_treshold) {
 }
 
 if (!exists("anno450")){
-  anno450 <- read.csv("~/Illumina_manifest/HumanMethylation450_15017482_v1-2.csv", skip = 7) %>% dplyr::select(., "Name", "CHR", "MAPINFO", "UCSC_RefGene_Name", "UCSC_RefGene_Group", "Relation_to_UCSC_CpG_Island")
+  anno450 <- read.csv("HumanMethylation450_15017482_v1-2.csv", skip = 7) %>% dplyr::select(., "Name", "CHR", "MAPINFO", "UCSC_RefGene_Name", "UCSC_RefGene_Group", "Relation_to_UCSC_CpG_Island")
 }
 
 Filtered_methylation_data <- list()
@@ -276,7 +274,7 @@ for (i in names(Filtered_methylation_data)) {
 
 ```{r}
 if (!exists("pchic")){
-  load("~/Genes_network/Chromatine_network/DATA/pchic.RData")
+  load("pchic.RData")
   pchic <- pchic[, c(1:10)]
   List_Promoter <- paste(pchic$baitChr, pchic$baitStart, sep = "_")
   List_Promoter <- unique(List_Promoter)
@@ -356,10 +354,10 @@ single_mutation <- design[,c(1:4,7)] == 0
 heat_RNAseq_all_data <- Create_heatmap_corr(matrix_rna, Phenotype = Phenotype_RNAseq)
 single_mutation <- rowSums(design[,c(1:4,7)]) == 0
 heat_single_mutation <- Create_heatmap_corr(matrix_rna, single_mutation, Phenotype_RNAseq)
-png(filename = "~/TCGA_Exploration/heatmap_RNAseq_allData.png", width = 1920, height = 1080)
+png(filename = "Results/heatmap_RNAseq_allData.png", width = 1920, height = 1080)
 heat_RNAseq_all_data
 dev.off()
-png(filename = "~/TCGA_Exploration/heatmap_RNAseq_single_mutation.png", width = 1920, height = 1080)
+png(filename = "Results/heatmap_RNAseq_single_mutation.png", width = 1920, height = 1080)
 heat_single_mutation
 dev.off()
 
@@ -381,7 +379,9 @@ heat_no_M2_patients <- Create_heatmap_corr(DATA = matrix_rna, remove_cases = No_
 png(filename = "Results/heatmap_RNAseq_no_M2_patients.png", width = 1920, height = 1080)
 heat_no_M2_patients
 dev.off()
+```
 
+```{r}
 
 ```
 
