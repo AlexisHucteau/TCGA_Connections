@@ -619,6 +619,7 @@ for (i in comparisons) {
 ```{r}
 Network <- list()
 subnetwork <- list()
+subnet_df <- list()
 for (i in comparisons) {
   #CpGs_interaction_nodes[[i]]$logFC <- ifelse(is.na(CpGs_interaction_nodes[[i]]$logFC), "NA", CpGs_interaction_nodes[[i]]$logFC)
   net <- unique(CpGs_interaction[[i]][,c(11,12)])
@@ -629,6 +630,9 @@ for (i in comparisons) {
   selected_edges <- E(Network[[i]])[selected_nodes %--% selected_nodes]
   subnetwork[[i]] <- subgraph.edges(Network[[i]], selected_edges)
   
+  subnet_df[[i]] <- as_long_data_frame(subnetwork[[i]])
 }
+
+
 ```
 
