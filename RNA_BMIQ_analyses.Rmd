@@ -16,6 +16,7 @@ library(RColorBrewer)
 library(factoextra)
 library(FactoMineR)
 library(GenomicRanges)
+
 library(EnhancedVolcano)
 library(stringr)
 library(clusterProfiler)
@@ -171,7 +172,7 @@ MacroPatient <- rownames(deconvolution[deconvolution$uncharacterized.cell > 0.5,
 No_Macro_deconv <- colnames(BMIQ_met) %in% MacroPatient
 names(No_Macro_deconv) <- seq(1:length(No_Macro_deconv))
 heat_no_M2_patients <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = No_Macro_deconv, Phenotype = Phenotype_met, corr_method = "pearson")
-png(filename = "Results/heat_no_M2_patients.png", width = 1920, height = 1080)
+png(filename = "Results/heatmap_BMIQ_no_M2_patients.png", width = 1920, height = 1080)
 heat_no_M2_patients
 dev.off()
 ```
@@ -239,7 +240,7 @@ comparisons <- names(enhanced_volcano)
 
 
 ```{r}
-j <- 2
+j <- 1
 png(file = paste0("Results/", comparisons[j], "/", comparisons[j], "_Methylation_beta_values_BMIQ_volcano_plot.png"), width = 1920, height = 1080)
 par(mfrow = c(1, 1))
 enhanced_volcano[[comparisons[j]]]
@@ -249,16 +250,17 @@ dev.off()
 ```{r}
 if (!exists("Blueprint_network")) {
   Blueprint_network <- read.csv("BLUEPRINT_fragments_good.tsv", sep = "\t")
-  Blueprint_network <- dplyr::select(Blueprint_network, "chr", "start", "end", "type", "ensembl", "gene_names", "intronic_regions", "type") #%>% filter(., type == "P")
+  Blueprint_network <- dplyr::select(Blueprint_network, "chr", "start", "end", "type", "ensembl", "gene_names", "intronic_regions", "type") %>% filter(., type == "P")
   Blueprint_network <- Blueprint_network %>% separate_rows(., gene_names, sep = " ")
   Blueprint_GRanges <- GRanges(
     seqnames = Blueprint_network$chr,
     ranges = IRanges(start = Blueprint_network$start, end = Blueprint_network$end),
-    type = Blueprint_network$type,
     gene_names = Blueprint_network$gene_names
   )
 }
 
+
+message("------- Overlap CpGs DM and Blueprint -------")
 
 GRanges_methylations <- list()
 match_hit_methylation_promoters <- list()
@@ -271,11 +273,11 @@ for (i in names(Filtered_methylation_data)) {
   )
   overlaps <- findOverlaps(Blueprint_GRanges, GRanges_methylations[[i]])
   match_hit_methylation_promoters[[i]] <- data.frame(mcols(Blueprint_GRanges[queryHits(overlaps)]), as.data.frame(mcols(GRanges_methylations[[i]])[subjectHits(overlaps), ]), stringsAsFactors = T)
-  colnames(match_hit_methylation_promoters[[i]]) <- c("type", "gene_names", "logFC")
-  Promoters_list[[i]] <- match_hit_methylation_promoters[[i]][match_hit_methylation_promoters[[i]]$type == "P",]
+  colnames(match_hit_methylation_promoters[[i]]) <- c("gene_names", "logFC")
+  Promoters_list[[i]] <- match_hit_methylation_promoters[[i]]
   message(paste0("\n=== Comparison ", i, " analyze ==="))
-  message("=== CpGs Differentially methylated overlapping Genes promoters ===")
-  print(length(Promoters_list[[i]]$gene_names))
+  message("=== Genes promoter with CpGs DM ===")
+  print(unique(length(Promoters_list[[i]]$gene_names)))
 }
 ```
 
@@ -301,8 +303,11 @@ if (!exists("pchic")){
   pchic$IDoe <- paste(pchic$chr_oe, pchic$start_oe, sep = "_")
 }
 
+message("------- Overlapping CpGs DM and Chromatin network -------")
+
+
 matchit_methylome_pchic <- list()
-for (i in names(Filtered_methylation_data)){
+for (i in names(Filtered_methylation_data)) {
   overlaps <- findOverlaps(PCHiC_GRange, GRanges_methylations[[i]])
   matchit_methylome_pchic[[i]] <- data.frame(mcols(PCHiC_GRange[queryHits(overlaps)]), as.data.frame(mcols(GRanges_methylations[[i]])[subjectHits(overlaps), ]), stringsAsFactors = T)
   colnames(matchit_methylome_pchic[[i]]) <- c("Gene_pchic", "ID", "logFC")
@@ -314,6 +319,9 @@ for (i in names(Filtered_methylation_data)){
 ```
 
 ```{r}
+
+message("------- Find chromatin fragment connected to CpGs DM fragments -------")
+
 CpGs_interaction <- list()
 for (i in names(matchit_methylome_pchic)){
   CpGs_interaction[[i]] <-  unique(rbind(pchic[which(pchic$IDbait %in% matchit_methylome_pchic[[i]]$ID), ], pchic[which(pchic$IDoe %in% matchit_methylome_pchic[[i]]$ID), ]))
@@ -326,6 +334,9 @@ for (i in names(matchit_methylome_pchic)){
 ```
 
 ```{r}
+
+message("------- Overlapping CpGs Neighbor with Blueprint -------")
+
 CpGs_interaction_nodes <- list()
 match_hit_CpGs_neighbor_promoter <- list()
 for (i in names(CpGs_interaction)) {
@@ -341,14 +352,9 @@ for (i in names(CpGs_interaction)) {
   )
   overlaps <- findOverlaps(Blueprint_GRanges, CpGs_interaction_nodes_Granges)
   match_hit_CpGs_neighbor_promoter[[i]] <- data.frame(mcols(Blueprint_GRanges[queryHits(overlaps)]), as.data.frame(mcols(CpGs_interaction_nodes_Granges)[subjectHits(overlaps), ]), stringsAsFactors = T)
-  colnames(match_hit_CpGs_neighbor_promoter[[i]]) <- c("type", "gene_names", "ID", "logFC")
+  colnames(match_hit_CpGs_neighbor_promoter[[i]]) <- c("gene_names", "ID", "logFC")
   
-  message("=== Number of nodes ===")
-  print(length(match_hit_CpGs_neighbor_promoter[[i]]$type))
-  
-  message("\n=== Number of nodes corresponding to Promoter ===")
-  nodes_promoter <- match_hit_CpGs_neighbor_promoter[[i]][match_hit_CpGs_neighbor_promoter[[i]]$type == "P",]
-  print(length(nodes_promoter$gene_names))
+  nodes_promoter <- match_hit_CpGs_neighbor_promoter[[i]]
   
   message("\n=== Number of genes having Promoter in the neighbor of CpGs DM ===")
   print(length(unique(nodes_promoter$gene_names)))
@@ -371,21 +377,21 @@ single_mutation <- design[,c(1:4,7)] == 0
 heat_RNAseq_all_data <- Create_heatmap_corr(matrix_rna, Phenotype = Phenotype_RNAseq)
 single_mutation <- rowSums(design[,c(1:4,7)]) == 0
 heat_single_mutation <- Create_heatmap_corr(matrix_rna, single_mutation, Phenotype_RNAseq)
-png(filename = paste0("Results/", i, "/", i, "_heatmap_RNAseq_allData.png"), width = 1920, height = 1080)
+png(filename = paste0("Results/heatmap_RNAseq_allData.png"), width = 1920, height = 1080)
 heat_RNAseq_all_data
 dev.off()
-png(filename = paste0("Results/", i, "/", i, "_heatmap_RNAseq_single_mutation.png"), width = 1920, height = 1080)
+png(filename = paste0("Results/heatmap_RNAseq_single_mutation.png"), width = 1920, height = 1080)
 heat_single_mutation
 dev.off()
 
 no_wild_type <- design[,10] == 0
 heat_no_WT <- Create_heatmap_corr(matrix_rna, no_wild_type, Phenotype_RNAseq)
-png(filename = paste0("Results/", i, "/", i, "_heatmap_RNAseq_no_wild_type.png"), width = 1920, height = 1080)
+png(filename = paste0("Results/heatmap_RNAseq_no_wild_type.png"), width = 1920, height = 1080)
 heat_no_WT
 dev.off()
 no_wild_type_single_mutation <- rowSums(design[,c(1:4,7, 10)]) == 0
 heat_no_WT_single_mutation <- Create_heatmap_corr(matrix_rna, no_wild_type_single_mutation, Phenotype_RNAseq)
-png(filename = paste0("Results/", i, "/", i, "_heatmap_RNAseq_no_wild_type_single_mutation.png"), width = 1920, height = 1080)
+png(filename = paste0("Results/heatmap_RNAseq_no_wild_type_single_mutation.png"), width = 1920, height = 1080)
 heat_no_WT_single_mutation
 dev.off()
 
@@ -393,7 +399,7 @@ MacroPatient <- rownames(deconvolution[deconvolution$uncharacterized.cell > 0.5,
 No_Macro_deconv <- colnames(matrix_rna) %in% MacroPatient
 names(No_Macro_deconv) <- seq(1:length(No_Macro_deconv))
 heat_no_M2_patients <- Create_heatmap_corr(DATA = matrix_rna, remove_cases = No_Macro_deconv, Phenotype = Phenotype_RNAseq)
-png(filename = paste0("Results/", i, "/", i, "_heatmap_RNAseq_no_M2_patients.png"), width = 1920, height = 1080)
+png(filename = paste0("Results/heatmap_RNAseq_no_M2_patients.png"), width = 1920, height = 1080)
 heat_no_M2_patients
 dev.off()
 ```
@@ -401,10 +407,10 @@ dev.off()
 ```{r}
 DATA_RNA_for_PCA <- cbind(t(matrix_rna), Phenotype_RNAseq)
 res.pca.rna <- PCA(DATA_RNA_for_PCA, scale.unit = FALSE, ncp = 2, graph = TRUE, quali.sup = c(56494:56498))
-png(filename = paste0("Results/", i, "/", i, "_RNA_ellipses_PCA.png"), width = 1920, height = 1080)
+png(filename = paste0("Results/RNA_ellipses_PCA.png"), width = 1920, height = 1080)
 plotellipses(res.pca.rna, 56494:56498)
 dev.off()
-png(filename = paste0("Results/", i, "/", i, "_RNA_barplot_PCA.png"), width = 1920, height = 1080)
+png(filename = paste0("Results/RNA_barplot_PCA.png"), width = 1920, height = 1080)
 fviz_eig(res.pca.rna, addlabels = TRUE)
 dev.off()
 fviz_eig(res.pca.rna, addlabels = TRUE)
@@ -521,13 +527,15 @@ for (i in names(DGE_comparison_of_interest)) {
   Genes_DE[[i]] <- DGE_comparison_of_interest[[i]] %>% filter(., (logFC**2 > 2.25 & P.Value < 0.05 & hgnc_symbol != "")) %>% dplyr::select(., logFC, AveExpr, P.Value, hgnc_symbol)
   List_genes_DE[["up"]][[i]] <- as.vector(Genes_DE[[i]] %>% filter(., logFC > 0) %>% dplyr::select(., hgnc_symbol))$hgnc_symbol
   List_genes_DE[["down"]][[i]] <- as.vector(Genes_DE[[i]] %>% filter(., logFC < 0) %>% dplyr::select(., hgnc_symbol))$hgnc_symbol
-  write.csv(x = List_genes_DE[["up"]][[i]], file = paste0("Results/", i, "_up_regulated.csv"), row.names = FALSE)
-  write.csv(x = List_genes_DE[["down"]][[i]], file = paste0("Results/", i, "_down_regulated.csv"), row.names = FALSE)
+  write.csv(x = List_genes_DE[["up"]][[i]], file = paste0("Results/", i, "/", i, "_up_regulated.csv"), row.names = FALSE)
+  write.csv(x = List_genes_DE[["down"]][[i]], file = paste0("Results/", i, "/", i, "_down_regulated.csv"), row.names = FALSE)
   write.csv(x = Genes_DE[[i]], file = paste0("Results/", i, "/", i, "_DE.csv"), row.names = FALSE)
+  message("=== Number of genes differentially expressed ===")
+  print(unique(length(Genes_DE[[i]]$hgnc_symbol)))
 }
 
-venn.diagram(List_genes_DE[["up"]], filename = paste0("Results/", i, "/", i, "_Genes_up_regulated_compared_to_WT.png"), width = 1920, height = 1080, imagetype = "png")
-venn.diagram(List_genes_DE[["down"]], filename = paste0("Results/", i, "/", i, "_Genes_down_regulated_compared_to_WT.png"), width = 1920, height = 1080, imagetype = "png")
+venn.diagram(List_genes_DE[["up"]], filename = paste0("Results/Genes_up_regulated_compared_to_WT.png"), width = 1920, height = 1080, imagetype = "png")
+venn.diagram(List_genes_DE[["down"]], filename = paste0("Results/Genes_down_regulated_compared_to_WT.png"), width = 1920, height = 1080, imagetype = "png")
 ```
 
 ```{r}
@@ -575,64 +583,33 @@ dev.off()
 ```
 
 ```{r}
-DGE_Blueprint <- list()
-for (i in names(DGE_comparison_of_interest)) {
-  DGE_Blueprint[[i]] <- merge(DGE_comparison_of_interest[[i]], Blueprint_network, by.x = "ID", by.y = "ensembl")
-}
-
-find_overlap_between_genes_and_chromatine_network <- function(DATA, bed_file) {
-  message("\n[====================================================================================================]")
-  message("[<< Overlap differentially expressed genes promoter coordinates to chromatine fragment coordinates >>]")
-  message("[<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Need Promoter Capture Hi-C >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>]")
-  message("------------------------------------------------------------------------------------------------------\n")  
-  message(paste0("[------------- Comparison: ", i, " in progress ---------]"))
-  Genes_Ranges <- GRanges(
-    seqnames = DATA$chr,
-    ranges = IRanges(start = DATA$start, end = DATA$end),
-    genes_from_ensembl = DATA$hgnc_symbol,
-    logFC = DATA$logFC,
-    pvalue = DATA$P.Value
-  )
-  overlaps <- findOverlaps(bed_file, Genes_Ranges)
-  match_hit <- data.frame(mcols(bed_file[queryHits(overlaps)]), as.data.frame(mcols(Genes_Ranges)[subjectHits(overlaps), ]), stringsAsFactors = T)
-  return(match_hit)
-}
-
-matchit_RNAseq <- list()
-Significatif <- list()
-for (i in names(DGE_Blueprint)) {
-  matchit_RNAseq[[i]] <- find_overlap_between_genes_and_chromatine_network(DGE_Blueprint[[i]], PCHiC_GRange)
-  message("=== Number of Genes Differentially expressed with |logFC| > 1.5 & Pvalue < 0.05 ===")
-  Significatif[[i]] <- matchit_RNAseq[[i]][matchit_RNAseq[[i]]$logFC**2 > 1.5**2 & matchit_RNAseq[[i]]$pvalue < 0.05,]
-  print(length(unique(Significatif[[i]]$genes_from_ensembl)))
-}
-```
-
-```{r}
+Connexion_genes_cpgs <- list()  
+Genes_neighbor <- list()
 for (i in comparisons) {
+  Connexion_genes_cpgs[[i]] <- match_hit_CpGs_neighbor_promoter[[i]][match_hit_CpGs_neighbor_promoter[[i]]$gene_names %in% Genes_DE[[i]]$hgnc_symbol,] %>% merge(., Genes_DE[[i]], by.x = "gene_names", by.y = "hgnc_symbol", all.x = TRUE)
+  colnames(Connexion_genes_cpgs[[i]]) <- c("gene_names", "ID", "CpG_logFC", "Gene_logFC", "AveExpr", "P.Value")
   message(paste0("\n[------------------------------------------- Comparison: ", i, " in progress -------------------------------------------]"))
-  message("=== Number of CpGs differentially methylated in promoter of Genes Differentially expressed ===")
-  Promoter_DE_CpG_DM <- Significatif[[i]][Significatif[[i]]$genes_from_ensembl %in% Promoters_list[[i]]$gene_names,]
-  print(length(Promoter_DE_CpG_DM$genes_from_ensembl))
+  message("\n=== Genes DOWN expressed with CpGs Up methyl ===")
+  Genes_DoE_UM <- Connexion_genes_cpgs[[i]] %>% dplyr::filter(., CpG_logFC > 0 & Gene_logFC < 0)
+  print(length(unique(Genes_DoE_UM$gene_names)))
+  print(unique(Genes_DoE_UM$gene_names))
+  write.csv(unique(Genes_DoE_UM), paste0("Results/", i, "/", i, "_genes_down_methylated.csv"))
   
-  message("=== Number of CpGs Up methylated in promoter of Genes down regulated ===")
-  CpGs_up <- Promoters_list[[i]] %>% dplyr::filter(., logFC > 0)
-  Promoter_DR_CPG_UM <- Significatif[[i]][Significatif[[i]]$genes_from_ensembl %in% CpGs_up$gene_names,] %>% filter(., logFC < 0)
-  print(length(unique(Promoter_DR_CPG_UM$genes_from_ensembl)))
-  print(unique(Promoter_DR_CPG_UM$genes_from_ensembl))
-  write.csv(unique(Promoter_DR_CPG_UM$genes_from_ensembl), paste0("Results/", i, "/", i, "_genes_down_methylated.csv"))
+  message("\n=== Genes UP expressed with CpGs DOWN methyl ===")
+  Genes_UPE_DoM <- Connexion_genes_cpgs[[i]] %>% dplyr::filter(., CpG_logFC < 0 & Gene_logFC > 0)
+  print(length(unique(Genes_UPE_DoM$gene_names)))
+  print(unique(Genes_UPE_DoM$gene_names))
+  write.csv(Genes_UPE_DoM, paste0("Results/", i, "/", i, "_genes_up_unmethylated.csv"))
   
-  message("=== Number of CpGs Down methylated in promoter of Genes up regulated ===")
-  CpGs_down <- Promoters_list[[i]] %>% dplyr::filter(., logFC < 0)
-  Promoter_UR_CPG_DM <- Significatif[[i]][Significatif[[i]]$genes_from_ensembl %in% CpGs_down$gene_names,] %>% filter(., logFC > 0)
-  print(length(unique(Promoter_UR_CPG_DM$genes_from_ensembl)))
-  print(unique(Promoter_UR_CPG_DM$genes_from_ensembl))
-  write.csv(unique(Promoter_UR_CPG_DM$genes_from_ensembl), paste0("Results/", i, "/", i, "_genes_up_unmethylated.csv"))
+  message("\n=== Genes differentially expressed in the neighbor of CpGs ===")
+  Genes_DE_neighbor <- Connexion_genes_cpgs[[i]]
+  print(length(Genes_DE_neighbor$gene_names))
+  write.csv(Genes_DE_neighbor, paste0("Results/", i, "/", i, "_genes_DE_neighbor_DM.csv"))
   
-  message("\n=== Number of Genes differentially expressed in the neighbor of CpGs ===")
-  Promoter_DE_Neighbor <- Significatif[[i]][Significatif[[i]]$genes_from_ensembl %in% match_hit_CpGs_neighbor_promoter[[i]]$gene_names,]
-  print(length(Promoter_DE_Neighbor$genes_from_ensembl))
-  write.csv(unique(Promoter_DE_Neighbor$genes_from_ensembl), paste0("Results/", i, "/", i, "_genes_DE_neighbor_DM.csv"))
+  Genes_neighbor[[i]] <- match_hit_CpGs_neighbor_promoter[[i]] %>% dplyr::filter(., gene_names !="") %>% merge(., DGE_comparison_of_interest[[i]], by.x = "gene_names", by.y = "hgnc_symbol", all.x = TRUE)
+  message("\n=== Genes differentially expressed in the neighbor of CpGs ===")
+  print(length(unique(Genes_neighbor[[i]]$gene_names)))
+  write.csv(Genes_neighbor[[i]], paste0("Results/", i, "/", i, "_genes_neighbor_DM.csv"))
 
 }
   
@@ -643,7 +620,7 @@ for (i in comparisons) {
 Network <- list()
 subnetwork <- list()
 for (i in comparisons) {
-  CpGs_interaction_nodes[[i]]$logFC <- ifelse(is.na(CpGs_interaction_nodes[[i]]$logFC), "NA", CpGs_interaction_nodes[[i]]$logFC)
+  #CpGs_interaction_nodes[[i]]$logFC <- ifelse(is.na(CpGs_interaction_nodes[[i]]$logFC), "NA", CpGs_interaction_nodes[[i]]$logFC)
   net <- unique(CpGs_interaction[[i]][,c(11,12)])
   Network[[i]] <- graph_from_data_frame(net)
   selected_nodes_cpg <- V(Network[[i]])[V(Network[[i]])$name %in% matchit_methylome_pchic[[i]]$ID]
@@ -651,7 +628,7 @@ for (i in comparisons) {
   selected_nodes <- unique(c(selected_nodes_cpg, selected_nodes_genes))
   selected_edges <- E(Network[[i]])[selected_nodes %--% selected_nodes]
   subnetwork[[i]] <- subgraph.edges(Network[[i]], selected_edges)
-
-  }
+  
+}
 ```
 
