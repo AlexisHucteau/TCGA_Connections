@@ -25,7 +25,10 @@ library(VennDiagram)
 library(tidyr)
 library(hugene20sttranscriptcluster.db)
 library(igraph)
+```
 
+
+```{r, include = FALSE}
 setwd("~/GitHub/TCGA_Connections/")
 
 ALL_GDC_sample <- read_tsv("DATA_sample/ALL_data.tsv")
@@ -113,7 +116,7 @@ comparisons <- names(FitList)
 
 
 ```{r}
-Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method = "pearson") {
+Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method = "spearman") {
   name <- ""
   if (class(remove_cases) != "logical" ){
     number_of_cases <- length(DATA[1,])
@@ -676,8 +679,8 @@ for (i in comparisons) {
   net_Genes_up_cpgs_down <- subgraph.edges(subnetwork[[i]], selected_edges_genes_UP_CpG_DOWN)
   net_Genes_down_cpgs_up <- subgraph.edges(subnetwork[[i]], selected_edges_genes_DOWN_CpG_UP)
   
-  Genes_potentially_down_regulated_by_methylation[[i]] <- Connexion_genes_cpgs[[i]] %>% dplyr::filter(., ID %in% V(net_Genes_down_cpgs_up)$name)
-  Genes_potentially_up_regulated_by_unmethylation[[i]] <- Connexion_genes_cpgs[[i]] %>% dplyr::filter(., ID %in% V(net_Genes_up_cpgs_down)$name)
+  Genes_potentially_down_regulated_by_methylation[[i]] <- Connexion_genes_DE_cpgs[[i]] %>% dplyr::filter(., ID %in% V(net_Genes_down_cpgs_up)$name)
+  Genes_potentially_up_regulated_by_unmethylation[[i]] <- Connexion_genes_DE_cpgs[[i]] %>% dplyr::filter(., ID %in% V(net_Genes_up_cpgs_down)$name)
   
   write.csv(Genes_potentially_down_regulated_by_methylation[[i]], file = paste0("Results/", i, "/", i, "_Genes_potentially_down_regulated_by_methylation.csv"))
   write.csv(Genes_potentially_up_regulated_by_unmethylation[[i]], file = paste0("Results/", i, "/", i, "_Genes_potentially_up_regulated_by_unmethylation.csv"))
