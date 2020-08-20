@@ -127,11 +127,11 @@ Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method =
   Phenotype_filtered <- Phenotype[remove_cases,]
   matrix <- as.matrix.data.frame(DATA_filtered)
   ann_colors <- list(
-    DNMT3a = c(DNMT3AWT = "brown1", DNMT3Am = "cyan4"),
-    IDH = c(IDHWT = "bisque1", IDHm = "coral3"),
-    WT1 = c(WT1WT = "chartreuse4", WT1m = "brown4"),
-    FLT3 = c(FLT3AWT = "brown", FLT3m = "darkgoldenrod1"),
-    TET2 = c(TET2WT = "brown1", TET2m = "cyan4"))
+    DNMT3a = c(DNMT3AWT = "blue", DNMT3Am = "red"),
+    IDH = c(IDHWT = "blue", IDHm = "red"),
+    WT1 = c(WT1WT = "blue", WT1m = "red"),
+    FLT3 = c(FLT3AWT = "blue", FLT3m = "red"),
+    TET2 = c(TET2WT = "blue", TET2m = "red"))
   annotation_for_heatmap <- data.frame(IDH = Phenotype_filtered$IDH, DNMT3a = Phenotype_filtered$DNMT3A, WT1 = Phenotype_filtered$WT1, FLT3 = Phenotype_filtered$FLT3, TET2 = Phenotype_filtered$TET2)
   rownames(annotation_for_heatmap) <- colnames(DATA_filtered)
   corr <- rcorr(matrix, type = corr_method)$r
@@ -149,23 +149,24 @@ Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method =
   return(heatmap)
 } 
 
-heat_BMIQ_all_data <- Create_heatmap_corr(BMIQ_met, Phenotype = Phenotype_met)
+method <- "pearson"
+heat_BMIQ_all_data <- Create_heatmap_corr(BMIQ_met, Phenotype = Phenotype_met, method)
 single_mutation <- rowSums(design[,c(1:4,7)]) == 0
-heat_single_mutation <- Create_heatmap_corr(BMIQ_met, single_mutation, Phenotype_met)
-png(filename = "Results/heatmap_BMIQ_allData.png", width = 1920, height = 1080)
+heat_single_mutation <- Create_heatmap_corr(BMIQ_met, single_mutation, Phenotype_met, method)
+png(filename = paste0("Results/heatmap_", method,"_BMIQ_allData.png"), width = 1920, height = 1080)
 heat_BMIQ_all_data
 dev.off()
-png(filename = "Results/heatmap_BMIQ_single_mutation.png", width = 1920, height = 1080)
+png(filename = paste0("Results/heatmap_", method,"_BMIQ_single_mutation.png"), width = 1920, height = 1080)
 heat_single_mutation
 dev.off()
 no_wild_type <- design[,10] == 0
-heat_no_WT <- Create_heatmap_corr(BMIQ_met, no_wild_type, Phenotype_met)
-png(filename = "Results/heatmap_BMIQ_no_wild_type.png", width = 1920, height = 1080)
+heat_no_WT <- Create_heatmap_corr(BMIQ_met, no_wild_type, Phenotype_met, method)
+png(filename = paste0("Results/heatmap_", method,"_BMIQ_no_wild_type.png"), width = 1920, height = 1080)
 heat_no_WT
 dev.off()
 no_wild_type_single_mutation <- rowSums(design[,c(1:4,7, 10)]) == 0
-heat_no_WT_single_mutation <- Create_heatmap_corr(BMIQ_met, no_wild_type_single_mutation, Phenotype_met)
-png(filename = "Results/heatmap_BMIQ_no_wild_type_single_mutation.png", width = 1920, height = 1080)
+heat_no_WT_single_mutation <- Create_heatmap_corr(BMIQ_met, no_wild_type_single_mutation, Phenotype_met, method)
+png(filename = paste0("Results/heatmap_", method,"_BMIQ_no_wild_type_single_mutation.png"), width = 1920, height = 1080)
 heat_no_WT_single_mutation
 dev.off()
 deconvolution <- read.delim("deconvolution.txt", row.names=1)
@@ -174,8 +175,8 @@ deconvolution <- deconvolution[rownames(deconvolution) %in% Cases,]
 MacroPatient <- rownames(deconvolution[deconvolution$uncharacterized.cell > 0.5,])
 No_Macro_deconv <- colnames(BMIQ_met) %in% MacroPatient
 names(No_Macro_deconv) <- seq(1:length(No_Macro_deconv))
-heat_no_M2_patients <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = No_Macro_deconv, Phenotype = Phenotype_met, corr_method = "pearson")
-png(filename = "Results/heatmap_BMIQ_no_M2_patients.png", width = 1920, height = 1080)
+heat_no_M2_patients <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = No_Macro_deconv, Phenotype = Phenotype_met, method)
+png(filename = paste0("Results/heatmap_", method,"_BMIQ_no_M2_patients.png"), width = 1920, height = 1080)
 heat_no_M2_patients
 dev.off()
 ```
@@ -625,11 +626,12 @@ for (i in comparisons) {
   print(length(unique(Genes_DE_neighbor$gene_names)))
   write.csv(Genes_DE_neighbor, paste0("Results/", i, "/", i, "_genes_DE_neighbor_DM.csv"))
   
-  Genes_neighbor[[i]] <- match_hit_CpGs_neighbor_promoter[[i]] %>% dplyr::filter(., gene_names !="") %>% merge(., DGE_comparison_of_interest[[i]], by.x = "gene_names", by.y = "hgnc_symbol", all.x = TRUE) %>% dplyr::select(., gene_names, ID.x, logFC.x, logFC.y, P.Value)
-  colnames(Genes_neighbor[[i]]) <- c("gene_names", "ID", "CpG_logFC", "Gene_logFC", "Gene_P.value")
+  Genes_neighbor[[i]] <- match_hit_CpGs_neighbor_promoter[[i]] %>% dplyr::filter(., gene_names !="") %>% merge(., DGE_comparison_of_interest[[i]], by.x = "gene_names", by.y = "hgnc_symbol", all.x = TRUE) %>% dplyr::select(., gene_names, ID.x, logFC.x, logFC.y, P.Value, AveExpr)
+  colnames(Genes_neighbor[[i]]) <- c("gene_names", "ID", "CpG_logFC", "Gene_logFC", "Gene_P.value", "AveExpr")
   Genes_neighbor[[i]]$CpG_logFC <- ifelse(is.na(Genes_neighbor[[i]]$CpG_logFC), "NA", ifelse(Genes_neighbor[[i]]$CpG_logFC > 0, "UP", "DOWN"))
   Genes_neighbor[[i]]$Gene_logFC <- ifelse(is.na(Genes_neighbor[[i]]$Gene_logFC), 0, Genes_neighbor[[i]]$Gene_logFC)
   Genes_neighbor[[i]]$Gene_P.value <- ifelse(is.na(Genes_neighbor[[i]]$Gene_P.value), 1, Genes_neighbor[[i]]$Gene_P.value)
+  Genes_neighbor[[i]]$AveExpr <- ifelse(is.na(Genes_neighbor[[i]]$AveExpr), 0, sqrt(exp(Genes_neighbor[[i]]$AveExpr)))
   Genes_neighbor[[i]]$Gene_log2_P.value <- -log2(Genes_neighbor[[i]]$Gene_P.value)
 
 
@@ -704,5 +706,24 @@ for (i in comparisons) {
   write_tsv(net_df, path = paste0("Results/Networks/", i,"_whole_network.tsv"))
   write_tsv(Genes_neighbor[[i]], path = paste0("Results/Networks/",i ,"_vertices.tsv"))
 }
+```
+
+```{r}
+library(ggplot2)
+deconvolution_violin <- data.frame(Cell_Type = c(rep("B cell", 76), rep("Macrophage M1", 76), rep("Macrophage M2", 76), rep("Monocyte", 76), rep("Neutrophil", 76), rep("NK cell", 76), rep("T cell CD4+ (non-regulatory)", 76), rep("T cell CD8+", 76), rep("T cell regulatory (Tregs)", 76), rep("Myeloid dendritic cell", 76), rep("uncharacterized cell", 76)),
+                          Values = c(deconvolution$B.cell, deconvolution$Macrophage.M1, deconvolution$Macrophage.M2, deconvolution$Monocyte, deconvolution$Neutrophil, deconvolution$NK.cell, deconvolution$T.cell.CD4...non.regulatory., deconvolution$T.cell.CD8., deconvolution$T.cell.regulatory..Tregs., deconvolution$Myeloid.dendritic.cell, deconvolution$uncharacterized.cell))
+deconvolution_violin$Values <- round(deconvolution_violin$Values, 1)
+                                                                                                                                                                                                                                             
+p <- ggplot(deconvolution_violin, aes(x=Cell_Type, y=Values, fill=Cell_Type), las = 2) + 
+  geom_violin() + 
+  theme_grey(base_size = 40) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+png(filename = "Deconvolution_patients_data.png", width = 1920, height = 1080)
+p
+dev.off()
+p <- ggplot(deconvolution_violin, aes(x=Cell_Type, y=Values, fill=Cell_Type), las = 2) + 
+  geom_violin() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+p
 ```
 
