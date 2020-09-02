@@ -25,6 +25,8 @@ library(VennDiagram)
 library(tidyr)
 library(hugene20sttranscriptcluster.db)
 library(igraph)
+library(gridExtra)
+library(grid)
 ```
 
 
@@ -118,7 +120,7 @@ comparisons <- names(FitList)
 ```{r}
 Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method = "spearman") {
   name <- ""
-  if (class(remove_cases) != "logical" ){
+  if (class(remove_cases) != "logical" ) {
     number_of_cases <- length(DATA[1,])
     remove_cases <- rep(TRUE, number_of_cases)
     name = "full_data"
@@ -127,11 +129,11 @@ Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method =
   Phenotype_filtered <- Phenotype[remove_cases,]
   matrix <- as.matrix.data.frame(DATA_filtered)
   ann_colors <- list(
-    DNMT3a = c(DNMT3AWT = "blue", DNMT3Am = "red"),
-    IDH = c(IDHWT = "blue", IDHm = "red"),
-    WT1 = c(WT1WT = "blue", WT1m = "red"),
-    FLT3 = c(FLT3AWT = "blue", FLT3m = "red"),
-    TET2 = c(TET2WT = "blue", TET2m = "red"))
+    DNMT3a = c(DNMT3AWT = "blue", DNMT3Am = "red4"),
+    IDH = c(IDHWT = "cyan", IDHm = "red"),
+    WT1 = c(WT1WT = "blue", WT1m = "red4"),
+    FLT3 = c(FLT3AWT = "blue", FLT3m = "red4"),
+    TET2 = c(TET2WT = "blue", TET2m = "red4"))
   annotation_for_heatmap <- data.frame(IDH = Phenotype_filtered$IDH, DNMT3a = Phenotype_filtered$DNMT3A, WT1 = Phenotype_filtered$WT1, FLT3 = Phenotype_filtered$FLT3, TET2 = Phenotype_filtered$TET2)
   rownames(annotation_for_heatmap) <- colnames(DATA_filtered)
   corr <- rcorr(matrix, type = corr_method)$r
@@ -143,6 +145,7 @@ Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method =
          annotation_colors = ann_colors,
          legend = TRUE,
          treeheight_row = 20,
+         cutree_cols = 3,
          main = paste0("Heatmap ",  deparse(substitute(DATA)), " ", name, " ", corr_method, " correlation"), 
          fontsize = 10
          )
@@ -150,9 +153,9 @@ Create_heatmap_corr <- function(DATA, remove_cases = 0, Phenotype, corr_method =
 } 
 
 method <- "pearson"
-heat_BMIQ_all_data <- Create_heatmap_corr(BMIQ_met, Phenotype = Phenotype_met, method)
+heat_BMIQ_all_data <- Create_heatmap_corr(BMIQ_met, Phenotype = Phenotype_met, corr_method = method)
 single_mutation <- rowSums(design[,c(1:4,7)]) == 0
-heat_single_mutation <- Create_heatmap_corr(BMIQ_met, single_mutation, Phenotype_met, method)
+heat_single_mutation <- Create_heatmap_corr(BMIQ_met, single_mutation, Phenotype_met, corr_method = method)
 png(filename = paste0("Results/heatmap_", method,"_BMIQ_allData.png"), width = 1920, height = 1080)
 heat_BMIQ_all_data
 dev.off()
@@ -160,12 +163,12 @@ png(filename = paste0("Results/heatmap_", method,"_BMIQ_single_mutation.png"), w
 heat_single_mutation
 dev.off()
 no_wild_type <- design[,10] == 0
-heat_no_WT <- Create_heatmap_corr(BMIQ_met, no_wild_type, Phenotype_met, method)
+heat_no_WT <- Create_heatmap_corr(BMIQ_met, no_wild_type, Phenotype_met, corr_method = method)
 png(filename = paste0("Results/heatmap_", method,"_BMIQ_no_wild_type.png"), width = 1920, height = 1080)
 heat_no_WT
 dev.off()
 no_wild_type_single_mutation <- rowSums(design[,c(1:4,7, 10)]) == 0
-heat_no_WT_single_mutation <- Create_heatmap_corr(BMIQ_met, no_wild_type_single_mutation, Phenotype_met, method)
+heat_no_WT_single_mutation <- Create_heatmap_corr(BMIQ_met, no_wild_type_single_mutation, Phenotype_met, corr_method = method)
 png(filename = paste0("Results/heatmap_", method,"_BMIQ_no_wild_type_single_mutation.png"), width = 1920, height = 1080)
 heat_no_WT_single_mutation
 dev.off()
@@ -175,10 +178,18 @@ deconvolution <- deconvolution[rownames(deconvolution) %in% Cases,]
 MacroPatient <- rownames(deconvolution[deconvolution$uncharacterized.cell > 0.5,])
 No_Macro_deconv <- colnames(BMIQ_met) %in% MacroPatient
 names(No_Macro_deconv) <- seq(1:length(No_Macro_deconv))
-heat_no_M2_patients <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = No_Macro_deconv, Phenotype = Phenotype_met, method)
+heat_no_M2_patients <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = No_Macro_deconv, Phenotype = Phenotype_met, corr_method = method)
 png(filename = paste0("Results/heatmap_", method,"_BMIQ_no_M2_patients.png"), width = 1920, height = 1080)
 heat_no_M2_patients
 dev.off()
+
+Outlier <- colnames(BMIQ_met) != "TCGA.AB.2849"
+
+heat_no_Outlier <- Create_heatmap_corr(DATA = BMIQ_met, remove_cases = Outlier, Phenotype = Phenotype_met, corr_method = method)
+png(filename = paste0("Results/heatmap_", method,"_BMIQ_no_Outlier.png"), width = 1920, height = 1080)
+heat_no_Outlier
+dev.off()
+
 ```
 
 
@@ -222,24 +233,31 @@ for (i in names(FitList)){
 ```{r}
 enhanced_volcano <- list()
 for (i in names(FitList)) {
-  enhanced_volcano[[i]] <- data.frame(logFC = FitList[[i]]$logFC, pvalue = FitList[[i]]$P.Value, cpgs = FitList[[i]]$ID)
-  enhanced_volcano[[i]] <- merge(enhanced_volcano[[i]], anno450, by.x = "cpgs", by.y = "Name")
-  enhanced_volcano[[i]] <- EnhancedVolcano(
-    toptable = enhanced_volcano[[i]],
-    lab = enhanced_volcano[[i]]$UCSC_RefGene_Name,
-    x = "logFC",
-    y = "pvalue",
-    FCcutoff = 0.1,
-    pCutoff = 0.0001,
-    title = paste0("Volcano plot of the differential\nmethylation of CpGs ", i),
-    subtitle = NA,
-    legendPosition = "right",
-    subtitleLabSize = 0,
-    legendLabSize = 10,
-    ylim = c(0, 10)
+  enhanced_volcano[[i]] <- FitList[[i]] %>% 
+    data.frame(logFC = .$logFC, pvalue = .$P.Value, cpgs = .$ID) %>% 
+    merge(., anno450, by.x = "cpgs", by.y = "Name") %>% 
+    EnhancedVolcano(
+      toptable = .,
+      lab = .$UCSC_RefGene_Name,
+      x = "logFC",
+      y = "pvalue",
+      FCcutoff = 0.1,
+      pCutoff = 0.0001,
+      title = i,
+      subtitle = NA,
+      subtitleLabSize = 0,
+      ylim = c(0, 10)
   )
 }
 comparisons <- names(enhanced_volcano)
+
+png(file = paste0("~/Github/TCGA_Connections/Results/Methyl_patient.png"), width = 1920, height = 1080)
+grid.arrange(enhanced_volcano[["IDHm-WT"]], enhanced_volcano[["DNMT3Am-WT"]], enhanced_volcano[["WT1m-WT"]], enhanced_volcano[["FLT3m-WT"]], enhanced_volcano[["TET2m-WT"]],
+             ncol=3,
+             top = textGrob('Volcano plot of methylation',
+                            just = c('center'),
+                            gp = gpar(fontsize = 32)))
+dev.off()
 ```
 
 ```{r}
@@ -255,7 +273,7 @@ dev.off()
 png(file = paste0("Results/", comparisons[4], "/", comparisons[4], "_Methylation_beta_values_BMIQ_volcano_plot.png"), width = 1920, height = 1080)
 enhanced_volcano[[comparisons[4]]]
 dev.off()
-png(file = paste0("Results/", comparisons[4], "/", comparisons[4], "_Methylation_beta_values_BMIQ_volcano_plot.png"), width = 1920, height = 1080)
+png(file = paste0("Results/", comparisons[5], "/", comparisons[5], "_Methylation_beta_values_BMIQ_volcano_plot.png"), width = 1920, height = 1080)
 enhanced_volcano[[comparisons[5]]]
 dev.off()
 ```
@@ -387,32 +405,32 @@ matrix_rna <- v_expr$E
 single_mutation <- design[,c(1:4,7)] == 0
 
 
-heat_RNAseq_all_data <- Create_heatmap_corr(matrix_rna, Phenotype = Phenotype_RNAseq)
+heat_RNAseq_all_data <- Create_heatmap_corr(matrix_rna, Phenotype = Phenotype_RNAseq, corr_method = method)
 single_mutation <- rowSums(design[,c(1:4,7)]) == 0
-heat_single_mutation <- Create_heatmap_corr(matrix_rna, single_mutation, Phenotype_RNAseq)
+heat_single_mutation <- Create_heatmap_corr(matrix_rna, single_mutation, Phenotype_RNAseq, corr_method = method)
 png(filename = paste0("Results/heatmap_RNAseq_allData.png"), width = 1920, height = 1080)
 heat_RNAseq_all_data
 dev.off()
-png(filename = paste0("Results/heatmap_RNAseq_single_mutation.png"), width = 1920, height = 1080)
+png(filename = paste0("Results/heatmap_", method, "_RNAseq_single_mutation.png"), width = 1920, height = 1080)
 heat_single_mutation
 dev.off()
 
 no_wild_type <- design[,10] == 0
-heat_no_WT <- Create_heatmap_corr(matrix_rna, no_wild_type, Phenotype_RNAseq)
-png(filename = paste0("Results/heatmap_RNAseq_no_wild_type.png"), width = 1920, height = 1080)
+heat_no_WT <- Create_heatmap_corr(matrix_rna, no_wild_type, Phenotype_RNAseq, corr_method = method)
+png(filename = paste0("Results/heatmap_", method, "_RNAseq_no_wild_type.png"), width = 1920, height = 1080)
 heat_no_WT
 dev.off()
 no_wild_type_single_mutation <- rowSums(design[,c(1:4,7, 10)]) == 0
-heat_no_WT_single_mutation <- Create_heatmap_corr(matrix_rna, no_wild_type_single_mutation, Phenotype_RNAseq)
-png(filename = paste0("Results/heatmap_RNAseq_no_wild_type_single_mutation.png"), width = 1920, height = 1080)
+heat_no_WT_single_mutation <- Create_heatmap_corr(matrix_rna, no_wild_type_single_mutation, Phenotype_RNAseq, corr_method = method)
+png(filename = paste0("Results/heatmap_", method, "_RNAseq_no_wild_type_single_mutation.png"), width = 1920, height = 1080)
 heat_no_WT_single_mutation
 dev.off()
 
 MacroPatient <- rownames(deconvolution[deconvolution$uncharacterized.cell > 0.5,])
 No_Macro_deconv <- colnames(matrix_rna) %in% MacroPatient
 names(No_Macro_deconv) <- seq(1:length(No_Macro_deconv))
-heat_no_M2_patients <- Create_heatmap_corr(DATA = matrix_rna, remove_cases = No_Macro_deconv, Phenotype = Phenotype_RNAseq)
-png(filename = paste0("Results/heatmap_RNAseq_no_M2_patients.png"), width = 1920, height = 1080)
+heat_no_M2_patients <- Create_heatmap_corr(DATA = matrix_rna, remove_cases = No_Macro_deconv, Phenotype = Phenotype_RNAseq, corr_method = method)
+png(filename = paste0("Results/heatmap_", method, "_RNAseq_no_M2_patients.png"), width = 1920, height = 1080)
 heat_no_M2_patients
 dev.off()
 ```
@@ -725,5 +743,35 @@ p <- ggplot(deconvolution_violin, aes(x=Cell_Type, y=Values, fill=Cell_Type), la
   geom_violin() + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 p
+```
+
+```{r}
+heat_deconv_df <- t(deconvolution)
+
+method <- "pearson"
+heat_deconv <- Create_heatmap_corr(heat_deconv_df, Phenotype = Phenotype_RNAseq, corr_method = method)
+
+png(filename = paste0("Results/heat_deconv", method, ".png"), width = 1920, height = 1080)
+heat_deconv
+dev.off()
+
+  
+
+
+matrix_cell_type_heat <- as.matrix.data.frame(deconvolution)
+corr <- rcorr(matrix_cell_type_heat, type = method)$r
+colnames(corr) <- colnames(deconvolution)
+heatmap <- pheatmap(corr, 
+         color = colorRampPalette(brewer.pal(n = 9, name = "YlOrRd"))(100),
+         legend = TRUE,
+         treeheight_row = 20, fontsize_row =  40, fontsize_col = 40,
+         main = paste0("Heatmap cell type correlation"), 
+         fontsize = 10
+         )
+
+png(filename = paste0("Results/heat_cell_type_deconv.png"), width = 1920, height = 1080)
+heatmap
+dev.off()
+
 ```
 
