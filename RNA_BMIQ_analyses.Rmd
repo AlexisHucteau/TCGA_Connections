@@ -545,8 +545,8 @@ add_genes_coordinates <- function(vector_of_genes) {
   
   # 
   coordinates <- getBM(attributes = c('ensembl_gene_id', 'hgnc_symbol', 'entrezgene_id'), filters = 'ensembl_gene_id', values = vector_of_genes$ID, mart = ensembl)
-  genes_annoted <- merge(x = vector_of_genes, y = coordinates, by.x = "ID", by.y = "ensembl_gene_id", all.x = TRUE)
   return(genes_annoted)
+  genes_annoted <- merge(x = vector_of_genes, y = coordinates, by.x = "ID", by.y = "ensembl_gene_id", all.x = TRUE)
 }
 
 Genes_DE <- list()
